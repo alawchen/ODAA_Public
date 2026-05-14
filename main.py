@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, date
 from config import INBOX_DIR, LOGS_DIR, PROCESSED_JSON, GOOGLE_API_KEY
 from pdf_parser import extract_text, get_pdf_images
-from field_extractor import extract_fields, extract_fields_from_images
+from field_extractor import extract_fields, extract_fields_from_images, condense_subject
 from sheets_manager import get_next_serial, append_record
 from file_manager import build_archive_filename, archive_pdf
 
@@ -67,6 +67,9 @@ def process_pdf(pdf_path: str, processed: set) -> bool:
             if text.startswith("[OCR 失敗"):
                 log.warning(f"OCR 失敗，需人工複核：{filename}")
             fields = extract_fields(text, recv_type)
+            if fields.get("主旨") and GOOGLE_API_KEY:
+                fields["主旨"] = condense_subject(fields["主旨"])
+                log.info(f"主旨已精簡（Gemini）：{fields['主旨']}")
         _log_parse_result(filename, fields)
 
         roc_year = fields.get("_roc_date", "").split(".")[0] or str(date.today().year - 1911)
@@ -115,3 +118,4 @@ if __name__ == "__main__":
 # [2026-05-13] [v1.3] 移除 ensure_header_columns（邏輯已移入 sheets_manager._get_sheet）
 # [2026-05-13] [v1.4] 移除案號未對應 log 警告（案號改人工填寫）
 # [2026-05-13] [v1.5] 掃描件改用 Gemini Vision 路徑，Tesseract 保留為 fallback
+# [2026-05-14] [v1.6] 電子公文路徑新增 condense_subject() 呼叫

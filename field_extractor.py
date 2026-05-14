@@ -127,6 +127,7 @@ def extract_fields_from_images(images: list, recv_type: str) -> dict:
     prompt = (
         "這是一份台灣政府公文圖片，請擷取以下欄位並以 JSON 回傳：\n"
         '{"收/發文機關":"", "收發日期":"YYYY/MM/DD（西元年）", "文號":"", "主旨":""}\n'
+        "主旨請精簡為 30 字以內的重點摘要，若含日期或期限須保留。\n"
         "找不到的欄位填空字串，只回傳 JSON，不要加說明。"
     )
 
@@ -151,8 +152,28 @@ def extract_fields_from_images(images: list, recv_type: str) -> dict:
     return fields
 
 
+def condense_subject(raw_subject: str) -> str:
+    """用 Gemini 將公文主旨精簡為 30 字以內的重點摘要；若含日期/期限須保留。"""
+    if not GOOGLE_API_KEY or not raw_subject:
+        return raw_subject
+    try:
+        from google import genai
+        client = genai.Client(api_key=GOOGLE_API_KEY)
+        prompt = (
+            "以下是一份台灣政府公文的主旨原文，請精簡為 30 字以內的重點摘要。"
+            "規則：①若主旨中有提及日期或期限，必須保留於摘要中；"
+            "②只保留核心事項；③不加任何說明或額外字元：\n"
+            f"{raw_subject}"
+        )
+        resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+        return resp.text.strip()
+    except Exception:
+        return raw_subject
+
+
 # === 更新日誌 ===
 # [2026-05-13] [v1.0] 初始版本，regex 解析 + Claude API fallback + 案號查詢
 # [2026-05-13] [v1.1] 移除案號自動查詢（_lookup_case），案號改由人工手動填寫，固定輸出空字串
 # [2026-05-13] [v1.2] 新增 extract_fields_from_images()，掃描件改用 Gemini Vision 直接結構化擷取
 # [2026-05-14] [v1.3] 遷移 Gemini SDK：google.generativeai → google.genai（棄用警告修正）
+# [2026-05-14] [v1.4] 新增 condense_subject()（Gemini 精簡主旨，30字含日期）；Vision prompt 加精簡指示
