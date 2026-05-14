@@ -1,0 +1,25 @@
+# 機密金鑰與機器設定（絕對不可入版控）
+.env
+credentials.json
+config.py
+
+# 執行期產生的狀態與記錄
+processed.json
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Tesseract 語言包（大型二進位，需手動安裝）
+tessdata/
+
+# 備份資料夾
+BACKUP/
+
+# 工作紀錄與機器特定資料
+ODAA-spec.md
+ODAA-plan.md
+case_lookup.json

@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>公文自動歸檔系統設定文件</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Microsoft JhengHei", "PingFang TC", sans-serif;
+      font-size: 15px;
+      line-height: 1.8;
+      color: #222;
+      background: #f5f5f5;
+    }
+    .page {
+      max-width: 960px;
+      margin: 32px auto;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 48px 56px;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: #1a3a5c;
+      border-bottom: 2px solid #1a3a5c;
+      padding-bottom: 10px;
+      margin-bottom: 6px;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 36px;
+    }
+    h2 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1a3a5c;
+      background: #eef3f8;
+      border-left: 4px solid #1a3a5c;
+      padding: 6px 12px;
+      margin-top: 36px;
+      margin-bottom: 14px;
+    }
+    h3 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #333;
+      margin-top: 20px;
+      margin-bottom: 8px;
+    }
+    p { margin-bottom: 10px; }
+    ul, ol { margin-left: 22px; margin-bottom: 10px; }
+    li { margin-bottom: 4px; }
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+      background: #f0f0f0;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      padding: 1px 5px;
+      color: #c7254e;
+    }
+    pre {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+      background: #f8f8f8;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      line-height: 1.6;
+      margin-bottom: 12px;
+      color: #333;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 14px;
+      font-size: 14px;
+    }
+    th {
+      background: #1a3a5c;
+      color: #fff;
+      padding: 7px 12px;
+      text-align: left;
+      font-weight: 600;
+    }
+    td {
+      padding: 7px 12px;
+      border-bottom: 1px solid #e8e8e8;
+      vertical-align: top;
+    }
+    tr:nth-child(even) td { background: #f9f9f9; }
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1px 7px;
+      border-radius: 10px;
+      margin-right: 4px;
+    }
+    .tag-path   { background:#ddf0dd; color:#276627; }
+    .tag-api    { background:#fde9cc; color:#7a4400; }
+    .tag-ocr    { background:#e8e0f5; color:#4a1c8f; }
+    .tag-sheets { background:#d4eafd; color:#0b4d96; }
+    .tag-gemini { background:#e6f4ea; color:#1e6c35; }
+    .flow {
+      background: #f8f8f8;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 16px 20px;
+      margin-bottom: 12px;
+    }
+    .flow-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .flow-num {
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      background: #1a3a5c;
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      margin-top: 1px;
+    }
+    .flow-num.gemini { background: #1e6c35; }
+    .note {
+      background: #fffbe6;
+      border: 1px solid #f0d060;
+      border-radius: 4px;
+      padding: 10px 14px;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+    .warn {
+      background: #fff0f0;
+      border: 1px solid #f0a0a0;
+      border-radius: 4px;
+      padding: 10px 14px;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #e0e0e0;
+      margin: 32px 0;
+    }
+    .changelog {
+      font-size: 13px;
+      color: #555;
+    }
+    .changelog td:first-child { white-space: nowrap; color: #888; }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <h1>公文自動歸檔系統設定文件</h1>
+  <div class="subtitle">建立日期：2026-05-13 ／ 最後更新：2026-05-14</div>
+
+  <!-- ======= 系統概述 ======= -->
+  <h2>一、系統概述</h2>
+  <p>本系統自動掃描指定資料夾中的 PDF 公文，解析各欄位後寫入公文收發紀錄（預設使用 Google Sheets ），並依命名規則複製歸檔至本機磁碟。</p>
+  <table>
+    <tr><th>項目</th><th>說明</th></tr>
+    <tr><td>程式語言</td><td>Python 3.10+，虛擬環境位於 <code>&lt;程式目錄&gt;\.venv\</code></td></tr>
+    <tr><td>執行方式</td><td>Windows 工作排程器每日 10:00 / 12:00 / 14:00 / 16:00 呼叫 <code>run.bat</code></td></tr>
+    <tr><td>PDF 來源</td><td>依 <code>.env</code> 中 <code>INBOX_DIR</code> 設定（掃描機輸出或手動放置資料夾）</td></tr>
+    <tr><td>歸檔目的地</td><td><code>ARCHIVE_BASE_DIR\{民國年}年\歸檔公文\</code>（依 <code>.env</code> 設定，年份由程式自動建立）</td></tr>
+    <tr><td>版本管理</td><td>GitHub 倉庫（<code>.env</code>、<code>credentials.json</code>、<code>processed.json</code>、<code>logs/</code> 均排除於版控外）</td></tr>
+  </table>
+
+  <!-- ======= 目錄結構 ======= -->
+  <h2>二、目錄結構</h2>
+  <pre>&lt;程式目錄&gt;\              ← clone 後自訂放置路徑（BASE_DIR 自動偵測，無需設定）
+  ├── main.py                  主控流程
+  ├── pdf_parser.py            PDF 文字擷取 + OCR + Gemini 圖片轉換
+  ├── field_extractor.py       欄位解析（regex / Gemini Vision / Claude fallback）
+  ├── sheets_manager.py        Google Sheets 讀寫
+  ├── file_manager.py          命名規則與歸檔
+  ├── config.py                所有路徑與常數設定
+  ├── run.bat                  Windows 排程呼叫入口（需修改程式目錄路徑）
+  ├── env.example.md           .env 設定範本（可入版控）
+  ├── .env                     機器設定與金鑰（不入版控，需自行建立）
+  ├── credentials.json         Google 服務帳號金鑰（不入版控）
+  ├── processed.json           已處理 PDF 清單（防重複，不入版控）
+  ├── tessdata\                Tesseract 語言包（不入版控，需手動安裝）
+  │   ├── chi_tra.traineddata
+  │   └── eng.traineddata
+  └── logs\                    每日執行記錄（不入版控）
+
+&lt;INBOX_DIR&gt;\              ← PDF 輸入資料夾（依 .env 設定，可為任意路徑）
+
+&lt;ARCHIVE_BASE_DIR&gt;\
+  └── {民國年}年\
+      └── 歸檔公文\         ← 歸檔 PDF 輸出位置（依 .env 設定）</pre>
+
+  <!-- ======= 初始設定：.env ======= -->
+  <h2>三、初始設定：建立 .env 檔案</h2>
+  <p>程式所有機器特定路徑與金鑰均從 <code>.env</code> 讀取。首次設定時，將 <code>env.example.md</code> 的內容複製為 <code>.env</code>，並填入實際值。</p>
+  <div class="warn">⚠ <code>.env</code> 包含 API 金鑰與路徑等識別資訊，已列入 <code>.gitignore</code>，<strong>絕對不可 commit 或外傳</strong>。</div>
+  <pre># 公文 PDF 掃描或下載的來源資料夾
+INBOX_DIR=&lt;公文 PDF 來源資料夾完整路徑&gt;
+
+# 歸檔根目錄，程式依年份自動建立子目錄（如 {民國年}年\）
+ARCHIVE_BASE_DIR=&lt;歸檔根目錄完整路徑&gt;
+
+# 年份目錄下的歸檔子目錄名稱（預設為「歸檔公文」）
+ARCHIVE_SUBDIR=&lt;歸檔子目錄名稱&gt;
+
+# Tesseract OCR 執行檔路徑（winget 安裝預設路徑如下）
+TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
+
+# Poppler 執行檔目錄（路徑含版本號，依實際安裝確認）
+POPPLER_PATH=C:\Users\&lt;使用者名稱&gt;\AppData\Local\Microsoft\WinGet\Packages\oschwartz10612.Poppler_Microsoft.Winget.Source_8wekyb3d8bbwe\poppler-25.07.0\Library\bin
+
+# Google Sheets 試算表 ID（從試算表網址 /d/&lt;ID&gt;/ 取得）
+SPREADSHEET_ID=&lt;試算表_ID&gt;
+
+# Anthropic API Key（可選，僅在 regex 解析不完整時呼叫 Claude Haiku）
+ANTHROPIC_API_KEY=&lt;Anthropic_API_Key&gt;
+
+# Google AI Studio API Key（建議設定，掃描件改走 Gemini Vision 辨識）
+GOOGLE_API_KEY=&lt;Google_AI_Studio_API_Key&gt;</pre>
+  <div class="note">建立 <code>.env</code> 後，執行 <code>.venv\Scripts\python.exe main.py</code> 測試；若有必要變數遺漏，程式啟動時會明確列出缺少項目並終止執行。</div>
+
+  <!-- ======= 路徑與常數設定 ======= -->
+  <h2>四、路徑與常數設定（config.py）</h2>
+
+  <h3><span class="tag tag-path">路徑</span> 自動計算路徑（不需手動設定）</h3>
+  <table>
+    <tr><th>常數</th><th>說明</th></tr>
+    <tr><td><code>BASE_DIR</code></td><td>程式所在目錄，以 <code>Path(__file__).parent</code> 自動偵測，clone 後無需修改</td></tr>
+    <tr><td><code>LOGS_DIR</code></td><td><code>BASE_DIR\logs</code>（自動計算）</td></tr>
+    <tr><td><code>PROCESSED_JSON</code></td><td><code>BASE_DIR\processed.json</code>（自動計算）</td></tr>
+    <tr><td><code>CREDENTIALS_JSON</code></td><td><code>BASE_DIR\credentials.json</code>（自動計算）</td></tr>
+    <tr><td><code>ARCHIVE_SUBDIR</code></td><td><code>歸檔公文</code>（年份子目錄下的歸檔資料夾名稱，固定值）</td></tr>
+  </table>
+
+  <h3><span class="tag tag-path">路徑</span> 機器設定（從 .env 讀取）</h3>
+  <table>
+    <tr><th>常數</th><th>對應環境變數</th><th>說明</th></tr>
+    <tr><td><code>INBOX_DIR</code></td><td><code>INBOX_DIR</code></td><td>公文 PDF 來源資料夾</td></tr>
+    <tr><td><code>ARCHIVE_BASE_DIR</code></td><td><code>ARCHIVE_BASE_DIR</code></td><td>歸檔根目錄</td></tr>
+    <tr><td><code>TESSERACT_CMD</code></td><td><code>TESSERACT_CMD</code></td><td>Tesseract 執行檔路徑</td></tr>
+    <tr><td><code>POPPLER_PATH</code></td><td><code>POPPLER_PATH</code></td><td>Poppler bin 目錄（版本號依安裝版本而異）</td></tr>
+    <tr><td><code>SPREADSHEET_ID</code></td><td><code>SPREADSHEET_ID</code></td><td>Google Sheets 試算表 ID</td></tr>
+  </table>
+
+  <h3><span class="tag tag-sheets">Sheets</span> Google Sheets 設定</h3>
+  <table>
+    <tr><th>常數</th><th>說明</th></tr>
+    <tr><td><code>SPREADSHEET_ID</code></td><td>由 <code>.env</code> 讀取；從試算表網址 <code>.../d/&lt;ID&gt;/edit</code> 取得</td></tr>
+    <tr><td><code>SHEET_COLUMNS</code></td><td>類型、收發類型、收/發文機關、收發日期、文號、案號、主旨、備註、流水號、歸檔檔名（A–J 欄順序）</td></tr>
+  </table>
+
+  <h3><span class="tag tag-api">API</span> Claude API（電子公文欄位解析 fallback）</h3>
+  <table>
+    <tr><th>常數</th><th>說明</th></tr>
+    <tr><td><code>ANTHROPIC_API_KEY</code></td><td>由 <code>.env</code> 讀取；未設定時跳過，僅在 regex 解析不足時呼叫</td></tr>
+    <tr><td><code>CLAUDE_MODEL</code></td><td><code>claude-haiku-4-5-20251001</code>（低成本模型）</td></tr>
+  </table>
+
+  <h3><span class="tag tag-gemini">Gemini</span> Gemini API（掃描件辨識）</h3>
+  <table>
+    <tr><th>常數</th><th>說明</th></tr>
+    <tr><td><code>GOOGLE_API_KEY</code></td><td>由 <code>.env</code> 讀取；未設定時掃描件退回 Tesseract 路徑</td></tr>
+    <tr><td><code>GEMINI_MODEL</code></td><td><code>gemini-2.5-flash</code>（Vision 能力，免費方案每日約 500 次呼叫）</td></tr>
+  </table>
+  <div class="note">Google AI Studio API Key 取得：前往 <strong>aistudio.google.com/apikey</strong> 建立，與 Workspace 訂閱各自獨立。</div>
+
+  <h3>解析參數</h3>
+  <table>
+    <tr><th>常數</th><th>值</th><th>說明</th></tr>
+    <tr><td><code>TEXT_PDF_MIN_CHARS</code></td><td><code>50</code></td><td>pdfplumber 擷取字數低於此值視為掃描件，轉掃描流程</td></tr>
+    <tr><td><code>MAX_SUBJECT_LEN</code></td><td><code>25</code></td><td>歸檔檔名中主旨最多取前 25 字</td></tr>
+    <tr><td><code>MAX_ORG_LEN</code></td><td><code>10</code></td><td>歸檔檔名中機關名最多取前 10 字</td></tr>
+  </table>
+
+  <!-- ======= 歸檔命名規則 ======= -->
+  <h2>五、歸檔檔名規則</h2>
+  <pre>格式：{流水號}.{民國日期}_{機關名稱}_{主旨摘要}.pdf
+
+範例：NNN.{年}.{月}.{日}_{機關名稱}_{主旨}.pdf
+      ─── ─────────── ──────────── ───────────
+       │       │            │            │
+       │       │            │            └─ 主旨前 25 字（去除 \ / : * ? " &lt; &gt; | ）
+       │       │            └─────────────── 機關名稱（前 10 字）
+       │       └──────────────────────────── 發文日期（民國年.月.日，月日補零兩位）
+       └──────────────────────────────────── 流水號（3 位補零，每年從 001 重置）</pre>
+  <p>歸檔路徑依發文日期民國年決定：（預設）<code>ARCHIVE_BASE_DIR\{民國年}年\歸檔公文\</code></p>
+  <p>若目標檔名已存在，自動加上 <code>_dup</code> 後綴避免覆蓋。</p>
+
+  <!-- ======= Google Sheets 結構 ======= -->
+  <h2>六、Google Sheets 結構</h2>
+  <p>試算表依民國年建立分頁（如 <code>114</code>、<code>115</code>、<code>116</code>），分頁不存在時由程式自動建立並寫入標題列。</p>
+  <table>
+    <tr><th>欄</th><th>欄位名稱</th><th>來源</th></tr>
+    <tr><td>A</td><td>類型</td><td>固定輸出「收文」</td></tr>
+    <tr><td>B</td><td>收發類型</td><td>電子公文 / 郵寄（依 PDF 文字量自動判斷）</td></tr>
+    <tr><td>C</td><td>收/發文機關</td><td>自動解析</td></tr>
+    <tr><td>D</td><td>收發日期</td><td>自動解析，格式 YYYY/MM/DD（西元年）</td></tr>
+    <tr><td>E</td><td>文號</td><td>自動解析（發文字號）</td></tr>
+    <tr><td>F</td><td>案號</td><td><strong>人工手動填寫</strong></td></tr>
+    <tr><td>G</td><td>主旨</td><td>自動解析</td></tr>
+    <tr><td>H</td><td>備註</td><td>人工使用</td></tr>
+    <tr><td>I</td><td>流水號</td><td>每年從 001 重置，3 位補零</td></tr>
+    <tr><td>J</td><td>歸檔檔名</td><td>完整歸檔檔名（含 .pdf）</td></tr>
+  </table>
+  <div class="note">流水號依 J 欄歸檔檔名前綴（如 <code>NNN.{年}.</code>）計算同年最大值 +1，跨年自動重置。</div>
+
+  <!-- ======= Google 服務帳號 ======= -->
+  <h2>七、Google 服務帳號設定（Sheets 寫入）</h2>
+  <ol>
+    <li>前往 <strong>Google Cloud Console</strong> → 建立或選擇專案</li>
+    <li>啟用 <strong>Google Sheets API</strong> 與 <strong>Google Drive API</strong></li>
+    <li>建立服務帳號 → 下載 JSON 金鑰 → 改名為 <code>credentials.json</code>，放至程式目錄</li>
+    <li>開啟公文收發試算表 → 右上角「共用」→ 貼入服務帳號 email → 設為<strong>編輯者</strong></li>
+  </ol>
+  <div class="warn">⚠ <code>credentials.json</code> 含私鑰，請勿上傳至 Git 或雲端共享，僅存放於本機。</div>
+  <div class="note">程式目錄內附有 <code>credentials.example.json</code>，說明 JSON 金鑰檔的欄位結構供參考。</div>
+
+  <!-- ======= OCR 工具安裝 ======= -->
+  <h2>八、OCR 工具安裝（掃描件 Tesseract fallback 用）</h2>
+  <h3>Tesseract</h3>
+  <ul>
+    <li>安裝：<code>winget install UB-Mannheim.TesseractOCR</code></li>
+    <li>預設安裝路徑：<code>C:\Program Files\Tesseract-OCR\tesseract.exe</code></li>
+    <li>語言包需手動複製至程式目錄下的 <code>tessdata\</code>：<code>chi_tra.traineddata</code>、<code>eng.traineddata</code></li>
+    <li>安裝完成後，確認 <code>.env</code> 中 <code>TESSERACT_CMD</code> 路徑正確</li>
+  </ul>
+  <div class="note">Tesseract 現為備援（fallback）使用：<code>GOOGLE_API_KEY</code> 未設定，或 Gemini 呼叫失敗時，程式自動改走此路徑。</div>
+  <h3>Poppler（pdf2image 依賴，PDF 轉圖片用）</h3>
+  <ul>
+    <li>安裝：<code>winget install oschwartz10612.Poppler</code></li>
+    <li>安裝後路徑形如：<code>C:\Users\&lt;使用者名稱&gt;\AppData\Local\Microsoft\WinGet\Packages\oschwartz10612.Poppler_...\poppler-X.XX.X\Library\bin</code></li>
+    <li>將完整路徑填入 <code>.env</code> 的 <code>POPPLER_PATH</code>（注意版本號依實際安裝而異）</li>
+  </ul>
+
+  <!-- ======= Python 環境 ======= -->
+  <h2>九、Python 環境與套件</h2>
+  <table>
+    <tr><th>項目</th><th>說明</th></tr>
+    <tr><td>Python 版本</td><td>3.10 以上（建議 3.12+）</td></tr>
+    <tr><td>虛擬環境</td><td>建立於 <code>&lt;程式目錄&gt;\.venv\</code></td></tr>
+    <tr><td>建立指令</td><td>在程式目錄下執行：<code>python -m venv .venv</code></td></tr>
+  </table>
+  <h3>必要套件</h3>
+  <pre>pdfplumber          # 文字型 PDF 文字擷取
+pdf2image           # PDF 轉圖片（Gemini Vision / Tesseract 前處理）
+pytesseract         # Tesseract OCR Python 介面（掃描件 fallback）
+python-dotenv       # 讀取 .env 環境變數
+gspread             # Google Sheets API 客戶端
+google-auth         # Google 服務帳號認證
+google-genai        # Gemini API（掃描件 Vision 辨識）
+anthropic           # Claude API（電子公文欄位解析 fallback，可選）</pre>
+  <p>安裝指令：</p>
+  <pre>.venv\Scripts\pip.exe install pdfplumber pdf2image pytesseract python-dotenv gspread google-auth google-genai anthropic</pre>
+
+  <h3>環境變數（API 金鑰）</h3>
+  <p>API 金鑰透過 <code>.env</code> 設定（見第三節），無需另外設定 Windows 系統環境變數。</p>
+
+  <!-- ======= 執行流程 ======= -->
+  <h2>十、執行流程</h2>
+
+  <h3>電子公文（文字型 PDF）</h3>
+  <div class="flow">
+    <div class="flow-step"><div class="flow-num">1</div><div>掃描 <code>INBOX_DIR</code>，取得所有 .pdf 清單；載入 <code>processed.json</code> 跳過已處理檔案</div></div>
+    <div class="flow-step"><div class="flow-num">2</div><div>pdfplumber 擷取文字，套用 Unicode NFKC 正規化；字數 ≥ 50 → 判定為電子公文</div></div>
+    <div class="flow-step"><div class="flow-num">3</div><div>regex 解析欄位（發文機關、日期、文號、主旨）；解析不完整時呼叫 Claude Haiku API 補充</div></div>
+    <div class="flow-step"><div class="flow-num">4</div><div>從 Google Sheets 對應年份分頁 J 欄計算流水號（同年最大值 +1）</div></div>
+    <div class="flow-step"><div class="flow-num">5</div><div>組合歸檔檔名，<strong>複製</strong> PDF 至 <code>ARCHIVE_BASE_DIR\{年}年\歸檔公文\</code></div></div>
+    <div class="flow-step"><div class="flow-num">6</div><div>在 Google Sheets 對應年份分頁末尾新增一列（A–J 欄），原始檔名寫入 <code>processed.json</code></div></div>
+  </div>
+
+  <h3>掃描件（郵寄來文）</h3>
+  <div class="flow">
+    <div class="flow-step"><div class="flow-num">1</div><div>pdfplumber 擷取字數 &lt; 50 → 判定為掃描件</div></div>
+    <div class="flow-step"><div class="flow-num gemini">2</div><div><strong>Gemini Vision 路徑</strong>（<code>GOOGLE_API_KEY</code> 已設定）：pdf2image 將各頁轉為圖片，一次呼叫 <code>gemini-2.5-flash</code>，直接回傳結構化 JSON 欄位</div></div>
+    <div class="flow-step"><div class="flow-num">2</div><div><strong>Tesseract fallback</strong>（Key 未設定或 Gemini 失敗）：pytesseract OCR（chi_tra+eng）→ CJK 空白清理 → regex 解析</div></div>
+    <div class="flow-step"><div class="flow-num">3</div><div>後續流程與電子公文相同（步驟 4–6）</div></div>
+  </div>
+
+  <div class="note">步驟 5 為「複製」非「移動」，確認歸檔正確後可手動刪除 <code>INBOX_DIR</code> 原檔。</div>
+
+  <!-- ======= 排程設定 ======= -->
+  <h2>十一、Windows 工作排程器設定</h2>
+  <h3>run.bat 內容</h3>
+  <p>將程式 clone 至本機後，修改 <code>run.bat</code> 中的程式目錄路徑：</p>
+  <pre>@echo off
+cd /d &lt;程式目錄&gt;
+.venv\Scripts\python.exe main.py &gt;&gt; logs\run.log 2&gt;&amp;1</pre>
+  <div class="note">將 <code>&lt;程式目錄&gt;</code> 改為程式實際放置路徑，例如 <code>D:\Projects\ODAA</code>。</div>
+  <h3>排程設定步驟</h3>
+  <ol>
+    <li>開啟「工作排程器」（<code>taskschd.msc</code>）</li>
+    <li>建立基本工作 → 觸發程序選「每天」</li>
+    <li>設定 4 個觸發時間：<strong>10:00、12:00、14:00、16:00</strong></li>
+    <li>動作：執行程式 → 程式（program）填 <code>cmd.exe</code>，引數（arguments）填 <code>/c "&lt;程式目錄&gt;\run.bat"</code></li>
+    <li>一般設定 → 勾選「不管使用者是否登入都要執行」（需輸入帳號密碼）</li>
+  </ol>
+
+  <!-- ======= 日常維護 ======= -->
+  <h2>十二、日常維護</h2>
+  <h3>處理後手動作業</h3>
+  <ul>
+    <li>開啟 Google Sheets 對應年份分頁，在 <strong>F 欄（案號）</strong>手動填入內部案件編號</li>
+    <li>確認歸檔無誤後，可刪除 <code>INBOX_DIR</code> 中的原始 PDF</li>
+  </ul>
+  <h3>重新處理已處理的 PDF</h3>
+  <p>從 <code>&lt;程式目錄&gt;\processed.json</code> 中移除對應檔名後，再次執行 <code>run.bat</code> 即可。</p>
+  <h3>欄位解析不完整時</h3>
+  <p>Log 出現 <code>欄位解析不完整</code> 警告時，請至 Google Sheets 手動補齊缺少欄位。</p>
+  <h3>新增年份分頁</h3>
+  <p>程式偵測到新年份時自動建立對應分頁並寫入標題列，無需人工操作。</p>
+  <h3>Log 位置</h3>
+  <p>每日執行記錄存於 <code>&lt;程式目錄&gt;\logs\run_YYYYMMDD.log</code>。</p>
+
+  <!-- ======= 模組說明 ======= -->
+  <h2>十三、模組功能說明</h2>
+  <table>
+    <tr><th>檔案</th><th>功能</th></tr>
+    <tr><td><code>main.py</code></td><td>主控流程；偵測掃描件自動切換 Gemini / Tesseract 路徑；管理 processed.json 與 log</td></tr>
+    <tr><td><code>pdf_parser.py</code></td><td>電子公文：pdfplumber + NFKC 正規化；掃描件：<code>get_pdf_images()</code> 轉圖（供 Gemini），Tesseract 作 fallback</td></tr>
+    <tr><td><code>field_extractor.py</code></td><td>電子公文：regex 解析 + Claude Haiku fallback；掃描件：<code>extract_fields_from_images()</code> 呼叫 Gemini Vision 直接輸出結構化欄位</td></tr>
+    <tr><td><code>sheets_manager.py</code></td><td>gspread 服務帳號認證；依民國年自動建立分頁；計算流水號；寫入紀錄列</td></tr>
+    <tr><td><code>file_manager.py</code></td><td>組合歸檔檔名；依年份決定目標資料夾；複製 PDF（重名加 _dup）</td></tr>
+    <tr><td><code>config.py</code></td><td>所有路徑與常數（讀取 .env，啟動時驗證必要變數）</td></tr>
+  </table>
+
+  <!-- ======= 更新記錄 ======= -->
+  <h2>十四、更新記錄</h2>
+  <table class="changelog">
+    <tr><th>日期</th><th>異動說明</th></tr>
+    <tr><td>2026-05-13</td><td>v1.0 初始版本：pdfplumber 擷取、Tesseract OCR、regex 解析、gspread 寫入、歸檔複製</td></tr>
+    <tr><td>2026-05-13</td><td>v1.1 流水號格式補零（001/002/003）</td></tr>
+    <tr><td>2026-05-13</td><td>v1.2 流水號依民國年重置；歸檔資料夾依年份動態建立</td></tr>
+    <tr><td>2026-05-13</td><td>v1.3 Google Sheets 改為多分頁架構（每年一分頁），新分頁自動建立</td></tr>
+    <tr><td>2026-05-13</td><td>v1.4 修正 gspread 6.x WorksheetNotFound 相容性問題</td></tr>
+    <tr><td>2026-05-13</td><td>v1.5 加入 Unicode NFKC 正規化，修正 CJK 相容字元（如 U+F98E）導致日期解析失敗</td></tr>
+    <tr><td>2026-05-13</td><td>v1.6 移除案號自動查詢，改由人工手動填寫</td></tr>
+    <tr><td>2026-05-13</td><td>v1.7 整合 Gemini 2.5 Flash Vision API：掃描件改走 Gemini 直接結構化辨識，Tesseract 保留為 fallback</td></tr>
+    <tr><td>2026-05-14</td><td>v1.8 敏感資訊移至 .env；Gemini SDK 改用 google-genai；run.bat 補 log 輸出重導向；工作排程器動作改為 cmd.exe /c 呼叫方式</td></tr>
+    <tr><td>2026-05-14</td><td>文件改版：所有機器特定路徑改用環境變數標記，新增 .env 初始設定段落，適合 GitHub fork 後參考使用</td></tr>
+  </table>
+
+  <hr>
+  <p style="font-size:12px;color:#888;text-align:right;">本文件最後更新：2026-05-14</p>
+
+</div>
+</body>
+</html>
