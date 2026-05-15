@@ -56,13 +56,15 @@ def _parse_by_regex(text: str) -> dict:
         fields["收發日期"] = _roc_to_date_str(roc_y, m, d)
         fields["_roc_date"] = f"{roc_y}.{m:02d}.{d:02d}"
 
-    # 主旨（接受各種 OCR 分隔符）
+    # 主旨（多行擷取至下一個段落標題；合併 OCR 換行）
     subject_match = re.search(
-        r"主\s*旨\s*[：:‥﹕]\s*([^\n]{5,})",
+        r"主\s*旨\s*[：:‥﹕]\s*([\s\S]+?)(?=\n\s*(?:說明|辦法|正本|副本)|\Z)",
         text
     )
     if subject_match:
-        fields["主旨"] = subject_match.group(1).strip()
+        subject_raw = re.sub(r"[ \t]*\n[ \t]*", "", subject_match.group(1)).strip()
+        if len(subject_raw) >= 5:
+            fields["主旨"] = subject_raw
 
     return fields
 
@@ -127,7 +129,7 @@ def extract_fields_from_images(images: list, recv_type: str) -> dict:
     prompt = (
         "這是一份台灣政府公文圖片，請擷取以下欄位並以 JSON 回傳：\n"
         '{"收/發文機關":"", "收發日期":"YYYY/MM/DD（西元年）", "文號":"", "主旨":""}\n'
-        "主旨請精簡為 30 字以內的重點摘要，若含日期或期限須保留。\n"
+        "主旨請擷取原文（完整文字，不要精簡）。\n"
         "找不到的欄位填空字串，只回傳 JSON，不要加說明。"
     )
 
@@ -160,9 +162,9 @@ def condense_subject(raw_subject: str) -> str:
         from google import genai
         client = genai.Client(api_key=GOOGLE_API_KEY)
         prompt = (
-            "以下是一份台灣政府公文的主旨原文，請精簡為 30 字以內的重點摘要。"
-            "規則：①若主旨中有提及日期或期限，必須保留於摘要中；"
-            "②只保留核心事項；③不加任何說明或額外字元：\n"
+            "以下是一份台灣政府公文的主旨原文，請精簡為 40 字以內的重點摘要。"
+            "規則：①最優先：若有期限計算語句（如「次日起N日曆天完成」「N工作天內提交」），必須完整保留；"
+            "②保留核心事項；③不加任何說明或額外字元：\n"
             f"{raw_subject}"
         )
         resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
@@ -177,3 +179,5 @@ def condense_subject(raw_subject: str) -> str:
 # [2026-05-13] [v1.2] 新增 extract_fields_from_images()，掃描件改用 Gemini Vision 直接結構化擷取
 # [2026-05-14] [v1.3] 遷移 Gemini SDK：google.generativeai → google.genai（棄用警告修正）
 # [2026-05-14] [v1.4] 新增 condense_subject()（Gemini 精簡主旨，30字含日期）；Vision prompt 加精簡指示
+# [2026-05-15] [v1.5] 提示詞改善：明確要求完整保留期限計算語句（次日起N日曆天等）；字數上限 30→40
+# [2026-05-15] [v1.6] 修正 _parse_by_regex 主旨正則：改為多行擷取並合併 OCR 換行（原 [^\n]{5,} 僅擷取首行）；Vision prompt 改為原文擷取
