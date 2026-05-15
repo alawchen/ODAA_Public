@@ -1,7 +1,7 @@
 import re
 import json
 from datetime import date
-from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, GOOGLE_API_KEY, GEMINI_MODEL
+from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, GOOGLE_API_KEY, GEMINI_MODEL, OWN_ORG
 
 # 民國年轉西元年（用於 Sheets 日期欄位）
 _ROC_YEAR_OFFSET = 1911
@@ -12,6 +12,8 @@ def extract_fields(text: str, recv_type: str) -> dict:
     fields = _parse_by_regex(text)
     if not _is_sufficient(fields):
         fields = _parse_by_claude(text, fields)
+    org = fields.get("收/發文機關", "")
+    fields["類型"] = "發文" if (OWN_ORG and org and (OWN_ORG in org or org in OWN_ORG)) else "收文"
     fields["收發類型"] = recv_type
     fields["案號"] = ""
     fields["備註"] = ""
@@ -143,10 +145,12 @@ def extract_fields_from_images(images: list, recv_type: str) -> dict:
     raw = re.sub(r"^```json|```$", "", response.text.strip(), flags=re.MULTILINE).strip()
     parsed = json.loads(raw)
 
-    fields: dict = {"類型": "收文", "收發類型": recv_type, "案號": "", "備註": ""}
+    fields: dict = {"收發類型": recv_type, "案號": "", "備註": ""}
     for k in ["收/發文機關", "收發日期", "文號", "主旨"]:
         if parsed.get(k):
             fields[k] = str(parsed[k])
+    org = fields.get("收/發文機關", "")
+    fields["類型"] = "發文" if (OWN_ORG and org and (OWN_ORG in org or org in OWN_ORG)) else "收文"
     m = re.match(r"(\d{4})/(\d{2})/(\d{2})", fields.get("收發日期", ""))
     if m:
         roc_y = int(m.group(1)) - _ROC_YEAR_OFFSET
@@ -181,3 +185,4 @@ def condense_subject(raw_subject: str) -> str:
 # [2026-05-14] [v1.4] 新增 condense_subject()（Gemini 精簡主旨，30字含日期）；Vision prompt 加精簡指示
 # [2026-05-15] [v1.5] 提示詞改善：明確要求完整保留期限計算語句（次日起N日曆天等）；字數上限 30→40
 # [2026-05-15] [v1.6] 修正 _parse_by_regex 主旨正則：改為多行擷取並合併 OCR 換行（原 [^\n]{5,} 僅擷取首行）；Vision prompt 改為原文擷取
+# [2026-05-15] [v1.7] 新增 OWN_ORG 判斷：發文字號機關符合本機關名稱時自動標記「發文」

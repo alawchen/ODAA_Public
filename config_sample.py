@@ -47,6 +47,9 @@ CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 GEMINI_MODEL = "gemini-2.5-flash"
 
+# === 本機關設定 ===
+OWN_ORG = os.environ.get("OWN_ORG", "")  # 本公司／機關名稱，用於判斷收發文類型
+
 # === 解析設定 ===
 TEXT_PDF_MIN_CHARS = 50  # 低於此字數視為掃描件
 MAX_SUBJECT_LEN = 40     # 歸檔檔名主旨最大字元數（Gemini 精簡後上限）
@@ -60,3 +63,4 @@ MAX_ORG_LEN = 10         # 歸檔檔名機關名最大字元數
 # [2026-05-13] [v1.4] 敏感資訊改由 .env 管理：BASE_DIR 自動偵測，路徑與 ID 移至環境變數，加啟動驗證
 # [2026-05-14] [v1.5] ARCHIVE_SUBDIR 改由 .env 設定（預設 "歸檔公文"）
 # [2026-05-15] [v1.6] MAX_SUBJECT_LEN: 25 → 40（期限語句完整保留需要更多空間）
+# [2026-05-15] [v1.7] 新增 OWN_ORG 設定（本機關名稱，用於判斷收發文類型）
