@@ -172,7 +172,10 @@ def condense_subject(raw_subject: str) -> str:
             f"{raw_subject}"
         )
         resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
-        return resp.text.strip()
+        result = resp.text.strip()
+        # 去除 Gemini 附加的字數標注（如「(30字)」「（40字）」）
+        result = re.sub(r"\s*[（(]\d+字[)）]\s*$", "", result).strip()
+        return result
     except Exception:
         return raw_subject
 
@@ -186,3 +189,4 @@ def condense_subject(raw_subject: str) -> str:
 # [2026-05-15] [v1.5] 提示詞改善：明確要求完整保留期限計算語句（次日起N日曆天等）；字數上限 30→40
 # [2026-05-15] [v1.6] 修正 _parse_by_regex 主旨正則：改為多行擷取並合併 OCR 換行（原 [^\n]{5,} 僅擷取首行）；Vision prompt 改為原文擷取
 # [2026-05-15] [v1.7] 新增 OWN_ORG 判斷：發文字號機關符合本機關名稱時自動標記「發文」
+# [2026-05-16] [v1.8] condense_subject 去除 Gemini 字數標注（如「(30字)」）
