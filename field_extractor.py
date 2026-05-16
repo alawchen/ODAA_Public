@@ -1,7 +1,7 @@
 import re
 import json
 from datetime import date
-from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, GOOGLE_API_KEY, GEMINI_MODEL
+from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, GOOGLE_API_KEY, GEMINI_MODEL, OWN_ORG
 
 # 民國年轉西元年（用於 Sheets 日期欄位）
 _ROC_YEAR_OFFSET = 1911
@@ -12,6 +12,10 @@ def extract_fields(text: str, recv_type: str) -> dict:
     fields = _parse_by_regex(text)
     if not _is_sufficient(fields):
         fields = _parse_by_claude(text, fields)
+    org = fields.get("收/發文機關", "")
+    fields["類型"] = "發文" if (OWN_ORG and org and (OWN_ORG in org or org in OWN_ORG)) else "收文"
+    if fields["類型"] == "發文" and fields.get("_受文者"):
+        fields["收/發文機關"] = fields["_受文者"]
     fields["收發類型"] = recv_type
     fields["案號"] = ""
     fields["備註"] = ""
@@ -56,13 +60,20 @@ def _parse_by_regex(text: str) -> dict:
         fields["收發日期"] = _roc_to_date_str(roc_y, m, d)
         fields["_roc_date"] = f"{roc_y}.{m:02d}.{d:02d}"
 
-    # 主旨（接受各種 OCR 分隔符）
+    # 主旨（多行擷取至下一個段落標題；合併 OCR 換行）
     subject_match = re.search(
-        r"主\s*旨\s*[：:‥﹕]\s*([^\n]{5,})",
+        r"主\s*旨\s*[：:‥﹕]\s*([\s\S]+?)(?=\n\s*(?:說明|辦法|正本|副本)|\Z)",
         text
     )
     if subject_match:
-        fields["主旨"] = subject_match.group(1).strip()
+        subject_raw = re.sub(r"[ \t]*\n[ \t]*", "", subject_match.group(1)).strip()
+        if len(subject_raw) >= 5:
+            fields["主旨"] = subject_raw
+
+    # 受文者（發文時用以替換收/發文機關欄位）
+    recv_org_match = re.search(r"受文者\s*[：:‥﹕]\s*([^\n]+)", text)
+    if recv_org_match:
+        fields["_受文者"] = recv_org_match.group(1).strip()
 
     return fields
 
@@ -126,8 +137,8 @@ def extract_fields_from_images(images: list, recv_type: str) -> dict:
 
     prompt = (
         "這是一份台灣政府公文圖片，請擷取以下欄位並以 JSON 回傳：\n"
-        '{"收/發文機關":"", "收發日期":"YYYY/MM/DD（西元年）", "文號":"", "主旨":""}\n'
-        "主旨請精簡為 30 字以內的重點摘要，若含日期或期限須保留。\n"
+        '{"收/發文機關":"（信頭發文單位）", "受文者":"", "收發日期":"YYYY/MM/DD（西元年）", "文號":"", "主旨":""}\n'
+        "主旨請擷取原文（完整文字，不要精簡）。\n"
         "找不到的欄位填空字串，只回傳 JSON，不要加說明。"
     )
 
@@ -141,10 +152,14 @@ def extract_fields_from_images(images: list, recv_type: str) -> dict:
     raw = re.sub(r"^```json|```$", "", response.text.strip(), flags=re.MULTILINE).strip()
     parsed = json.loads(raw)
 
-    fields: dict = {"類型": "收文", "收發類型": recv_type, "案號": "", "備註": ""}
-    for k in ["收/發文機關", "收發日期", "文號", "主旨"]:
+    fields: dict = {"收發類型": recv_type, "案號": "", "備註": ""}
+    for k in ["收/發文機關", "受文者", "收發日期", "文號", "主旨"]:
         if parsed.get(k):
             fields[k] = str(parsed[k])
+    org = fields.get("收/發文機關", "")
+    fields["類型"] = "發文" if (OWN_ORG and org and (OWN_ORG in org or org in OWN_ORG)) else "收文"
+    if fields["類型"] == "發文" and fields.get("受文者"):
+        fields["收/發文機關"] = fields["受文者"]
     m = re.match(r"(\d{4})/(\d{2})/(\d{2})", fields.get("收發日期", ""))
     if m:
         roc_y = int(m.group(1)) - _ROC_YEAR_OFFSET
@@ -160,13 +175,16 @@ def condense_subject(raw_subject: str) -> str:
         from google import genai
         client = genai.Client(api_key=GOOGLE_API_KEY)
         prompt = (
-            "以下是一份台灣政府公文的主旨原文，請精簡為 30 字以內的重點摘要。"
-            "規則：①若主旨中有提及日期或期限，必須保留於摘要中；"
-            "②只保留核心事項；③不加任何說明或額外字元：\n"
+            "以下是一份台灣政府公文的主旨原文，請精簡為 40 字以內的重點摘要。"
+            "規則：①最優先：若有期限計算語句（如「次日起N日曆天完成」「N工作天內提交」），必須完整保留；"
+            "②保留核心事項；③不加任何說明或額外字元：\n"
             f"{raw_subject}"
         )
         resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
-        return resp.text.strip()
+        result = resp.text.strip()
+        # 去除 Gemini 附加的字數標注（如「(30字)」「（40字）」）
+        result = re.sub(r"\s*[（(]\d+字[)）]\s*$", "", result).strip()
+        return result
     except Exception:
         return raw_subject
 
@@ -177,3 +195,8 @@ def condense_subject(raw_subject: str) -> str:
 # [2026-05-13] [v1.2] 新增 extract_fields_from_images()，掃描件改用 Gemini Vision 直接結構化擷取
 # [2026-05-14] [v1.3] 遷移 Gemini SDK：google.generativeai → google.genai（棄用警告修正）
 # [2026-05-14] [v1.4] 新增 condense_subject()（Gemini 精簡主旨，30字含日期）；Vision prompt 加精簡指示
+# [2026-05-15] [v1.5] 提示詞改善：明確要求完整保留期限計算語句（次日起N日曆天等）；字數上限 30→40
+# [2026-05-15] [v1.6] 修正 _parse_by_regex 主旨正則：改為多行擷取並合併 OCR 換行（原 [^\n]{5,} 僅擷取首行）；Vision prompt 改為原文擷取
+# [2026-05-15] [v1.7] 新增 OWN_ORG 判斷：發文字號機關符合本機關名稱時自動標記「發文」
+# [2026-05-16] [v1.8] condense_subject 去除 Gemini 字數標注（如「(30字)」）
+# [2026-05-16] [v1.9] 發文時以「受文者」取代「收/發文機關」欄位（regex 與 Vision 路徑同步）

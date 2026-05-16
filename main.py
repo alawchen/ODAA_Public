@@ -60,6 +60,9 @@ def process_pdf(pdf_path: str, processed: set) -> bool:
             if images:
                 log.info(f"使用 Gemini Vision 辨識掃描件：{filename}")
                 fields = extract_fields_from_images(images, recv_type)
+                if fields.get("主旨"):
+                    fields["主旨"] = condense_subject(fields["主旨"])
+                    log.info(f"主旨已精簡（Gemini）：{fields['主旨']}")
             else:
                 log.warning(f"圖片轉換失敗，退回 Tesseract：{filename}")
                 fields = extract_fields(text, recv_type)
@@ -119,3 +122,4 @@ if __name__ == "__main__":
 # [2026-05-13] [v1.4] 移除案號未對應 log 警告（案號改人工填寫）
 # [2026-05-13] [v1.5] 掃描件改用 Gemini Vision 路徑，Tesseract 保留為 fallback
 # [2026-05-14] [v1.6] 電子公文路徑新增 condense_subject() 呼叫
+# [2026-05-15] [v1.7] 掃描件 Vision 路徑亦加入 condense_subject() 呼叫
