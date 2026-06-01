@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import hashlib
 import logging
 from datetime import datetime, date
 from config import INBOX_DIR, LOGS_DIR, PROCESSED_JSON, GOOGLE_API_KEY
@@ -20,6 +21,14 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger(__name__)
+
+
+def _file_hash(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def load_processed() -> set:
@@ -47,7 +56,8 @@ def scan_inbox() -> list[str]:
 
 def process_pdf(pdf_path: str, processed: set) -> bool:
     filename = os.path.basename(pdf_path)
-    if filename in processed:
+    file_hash = _file_hash(pdf_path)
+    if file_hash in processed or filename in processed:
         log.info(f"略過（已處理）：{filename}")
         return False
 
@@ -81,7 +91,7 @@ def process_pdf(pdf_path: str, processed: set) -> bool:
         archive_pdf(pdf_path, archive_name, fields)
         append_record(fields, serial, archive_name)
 
-        processed.add(filename)
+        processed.add(file_hash)
         log.info(f"完成：{archive_name}")
         return True
 
@@ -123,3 +133,4 @@ if __name__ == "__main__":
 # [2026-05-13] [v1.5] 掃描件改用 Gemini Vision 路徑，Tesseract 保留為 fallback
 # [2026-05-14] [v1.6] 電子公文路徑新增 condense_subject() 呼叫
 # [2026-05-15] [v1.7] 掃描件 Vision 路徑亦加入 condense_subject() 呼叫
+# [2026-06-01] [v1.8] processed.json 改以 SHA256 hash 識別，解決 Flash.pdf 重名略過問題
