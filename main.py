@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import json
 import hashlib
@@ -34,8 +35,23 @@ def _file_hash(path: str) -> str:
 def load_processed() -> set:
     if os.path.exists(PROCESSED_JSON):
         with open(PROCESSED_JSON, encoding="utf-8") as f:
-            return set(json.load(f))
-    return set()
+            entries = json.load(f)
+    else:
+        return set()
+    result = set()
+    migrated = False
+    for entry in entries:
+        if re.fullmatch(r"[0-9a-f]{64}", entry):
+            result.add(entry)
+        else:
+            path = os.path.join(INBOX_DIR, entry)
+            if os.path.exists(path):
+                result.add(_file_hash(path))
+                migrated = True
+    if migrated:
+        save_processed(result)
+        log.info(f"processed.json 已自動遷移為 hash 格式（{len(result)} 筆）")
+    return result
 
 
 def save_processed(processed: set):
@@ -57,7 +73,7 @@ def scan_inbox() -> list[str]:
 def process_pdf(pdf_path: str, processed: set) -> bool:
     filename = os.path.basename(pdf_path)
     file_hash = _file_hash(pdf_path)
-    if file_hash in processed or filename in processed:
+    if file_hash in processed:
         log.info(f"略過（已處理）：{filename}")
         return False
 
@@ -134,3 +150,4 @@ if __name__ == "__main__":
 # [2026-05-14] [v1.6] 電子公文路徑新增 condense_subject() 呼叫
 # [2026-05-15] [v1.7] 掃描件 Vision 路徑亦加入 condense_subject() 呼叫
 # [2026-06-01] [v1.8] processed.json 改以 SHA256 hash 識別，解決 Flash.pdf 重名略過問題
+# [2026-06-01] [v1.9] load_processed 自動遷移舊格式（檔名→hash）；移除 filename fallback
