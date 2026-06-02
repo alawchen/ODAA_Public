@@ -17,6 +17,9 @@ def extract_fields(text: str, recv_type: str) -> dict:
     if fields["類型"] == "發文" and fields.get("_受文者"):
         fields["收/發文機關"] = fields["_受文者"]
     fields["收發類型"] = recv_type
+    if fields["類型"] == "發文" and fields.get("_發文方式"):
+        method = fields["_發文方式"]
+        fields["收發類型"] = "電子公文" if method == "電子交換" else method
     fields["案號"] = ""
     fields["備註"] = ""
     return fields
@@ -74,6 +77,11 @@ def _parse_by_regex(text: str) -> dict:
     recv_org_match = re.search(r"受文者\s*[：:‥﹕]\s*([^\n]+)", text)
     if recv_org_match:
         fields["_受文者"] = recv_org_match.group(1).strip()
+
+    # 發文方式（發文時覆蓋 recv_type；僅存在於發文公文，如「郵寄」「電子交換」）
+    send_method_match = re.search(r"發文方式\s*[：:]\s*([^\n\s]+)", text)
+    if send_method_match:
+        fields["_發文方式"] = send_method_match.group(1).strip()
 
     return fields
 
@@ -137,8 +145,8 @@ def extract_fields_from_images(images: list, recv_type: str) -> dict:
 
     prompt = (
         "這是一份台灣政府公文圖片，請擷取以下欄位並以 JSON 回傳：\n"
-        '{"收/發文機關":"（信頭發文單位）", "受文者":"", "收發日期":"YYYY/MM/DD（西元年）", "文號":"", "主旨":""}\n'
-        "主旨請擷取原文（完整文字，不要精簡）。\n"
+        '{"收/發文機關":"（信頭發文單位）", "受文者":"", "收發日期":"YYYY/MM/DD（西元年）", "文號":"", "主旨":"", "發文方式":""}\n'
+        "主旨請擷取原文（完整文字，不要精簡）。發文方式如有標示請擷取（如「郵寄」「電子交換」）。\n"
         "找不到的欄位填空字串，只回傳 JSON，不要加說明。"
     )
 
@@ -153,13 +161,16 @@ def extract_fields_from_images(images: list, recv_type: str) -> dict:
     parsed = json.loads(raw)
 
     fields: dict = {"收發類型": recv_type, "案號": "", "備註": ""}
-    for k in ["收/發文機關", "受文者", "收發日期", "文號", "主旨"]:
+    for k in ["收/發文機關", "受文者", "收發日期", "文號", "主旨", "發文方式"]:
         if parsed.get(k):
             fields[k] = str(parsed[k])
     org = fields.get("收/發文機關", "")
     fields["類型"] = "發文" if (OWN_ORG and org and (OWN_ORG in org or org in OWN_ORG)) else "收文"
     if fields["類型"] == "發文" and fields.get("受文者"):
         fields["收/發文機關"] = fields["受文者"]
+    if fields["類型"] == "發文" and fields.get("發文方式"):
+        method = fields["發文方式"]
+        fields["收發類型"] = "電子公文" if method == "電子交換" else method
     m = re.match(r"(\d{4})/(\d{2})/(\d{2})", fields.get("收發日期", ""))
     if m:
         roc_y = int(m.group(1)) - _ROC_YEAR_OFFSET
@@ -200,3 +211,4 @@ def condense_subject(raw_subject: str) -> str:
 # [2026-05-15] [v1.7] 新增 OWN_ORG 判斷：發文字號機關符合本機關名稱時自動標記「發文」
 # [2026-05-16] [v1.8] condense_subject 去除 Gemini 字數標注（如「(30字)」）
 # [2026-05-16] [v1.9] 發文時以「受文者」取代「收/發文機關」欄位（regex 與 Vision 路徑同步）
+# [2026-06-01] [v2.0] 擷取「發文方式」欄位：發文時以文件內標示覆蓋 recv_type（電子交換→電子公文，郵寄→郵寄）
