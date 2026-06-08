@@ -64,7 +64,7 @@ def append_record(fields: dict, serial: int, archive_filename: str):
         fields.get("收發類型", ""),
         fields.get("收/發文機關", ""),
         fields.get("收發日期", ""),
-        fields.get("文號", ""),
+        re.sub(r"\s+", "", fields.get("文號", "")),
         fields.get("案號", ""),
         fields.get("主旨", ""),
         fields.get("備註", ""),
@@ -79,3 +79,4 @@ def append_record(fields: dict, serial: int, archive_filename: str):
 # [2026-05-13] [v1.2] get_next_serial 改為依民國年篩選 J 欄歸檔檔名，流水號每年從 001 重置
 # [2026-05-13] [v1.3] 改為多分頁架構：依民國年取得/建立分頁，移除 ensure_header_columns
 # [2026-05-13] [v1.4] 改用 worksheets() 清單比對取代 try/except WorksheetNotFound，修正 gspread 6.x 相容性問題
+# [2026-06-08] [v1.5] append_record 文號欄位去除所有空白字元（含 OCR/AI 引入的內部空白）
