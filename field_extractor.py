@@ -22,6 +22,8 @@ def extract_fields(text: str, recv_type: str) -> dict:
         fields["收發類型"] = "電子公文" if method == "電子交換" else method
     fields["案號"] = ""
     fields["備註"] = ""
+    if fields.get("文號"):
+        fields["文號"] = re.sub(r"\s+", "", fields["文號"])
     return fields
 
 
@@ -51,7 +53,7 @@ def _parse_by_regex(text: str) -> dict:
         text
     )
     if ref_match:
-        fields["文號"] = ref_match.group(1).strip()
+        fields["文號"] = re.sub(r"\s+", "", ref_match.group(1))
 
     # 發文日期（接受各種 OCR 分隔符與空白）
     date_match = re.search(
@@ -175,6 +177,8 @@ def extract_fields_from_images(images: list, recv_type: str) -> dict:
     if m:
         roc_y = int(m.group(1)) - _ROC_YEAR_OFFSET
         fields["_roc_date"] = f"{roc_y}.{m.group(2)}.{m.group(3)}"
+    if fields.get("文號"):
+        fields["文號"] = re.sub(r"\s+", "", fields["文號"])
     return fields
 
 
@@ -187,8 +191,9 @@ def condense_subject(raw_subject: str) -> str:
         client = genai.Client(api_key=GOOGLE_API_KEY)
         prompt = (
             "以下是一份台灣政府公文的主旨原文，請精簡為 40 字以內的重點摘要。"
-            "規則：①最優先：若有期限計算語句（如「次日起N日曆天完成」「N工作天內提交」），必須完整保留；"
-            "②保留核心事項；③不加任何說明或額外字元：\n"
+            "規則：①若原文提及工程名稱或計畫名稱，將其置於摘要開頭，再接重點（格式：「XXX工程 摘要重點」）；"
+            "②最優先：若有期限計算語句（如「次日起N日曆天完成」「N工作天內提交」），必須完整保留；"
+            "③保留核心事項；④不加任何說明或額外字元：\n"
             f"{raw_subject}"
         )
         resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
@@ -212,3 +217,4 @@ def condense_subject(raw_subject: str) -> str:
 # [2026-05-16] [v1.8] condense_subject 去除 Gemini 字數標注（如「(30字)」）
 # [2026-05-16] [v1.9] 發文時以「受文者」取代「收/發文機關」欄位（regex 與 Vision 路徑同步）
 # [2026-06-01] [v2.0] 擷取「發文方式」欄位：發文時以文件內標示覆蓋 recv_type（電子交換→電子公文，郵寄→郵寄）
+# [2026-06-12] [v2.1] 文號去除內部空白（三處：regex/extract_fields/Vision 路徑）；condense_subject 工程/計畫名稱前置
