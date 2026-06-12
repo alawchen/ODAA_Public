@@ -1,5 +1,6 @@
 import re
 import json
+import time
 from datetime import date
 from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, GOOGLE_API_KEY, GEMINI_MODEL, OWN_ORG
 
@@ -158,6 +159,7 @@ def extract_fields_from_images(images: list, recv_type: str) -> dict:
         return types.Part.from_bytes(data=buf.getvalue(), mime_type="image/jpeg")
 
     parts = [types.Part.from_text(text=prompt)] + [_to_part(img) for img in images]
+    time.sleep(20)
     response = client.models.generate_content(model=GEMINI_MODEL, contents=parts)
     raw = re.sub(r"^```json|```$", "", response.text.strip(), flags=re.MULTILINE).strip()
     parsed = json.loads(raw)
@@ -196,6 +198,7 @@ def condense_subject(raw_subject: str) -> str:
             "③保留核心事項；④不加任何說明或額外字元：\n"
             f"{raw_subject}"
         )
+        time.sleep(20)
         resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
         result = resp.text.strip()
         # 去除 Gemini 附加的字數標注（如「(30字)」「（40字）」）
@@ -218,3 +221,4 @@ def condense_subject(raw_subject: str) -> str:
 # [2026-05-16] [v1.9] 發文時以「受文者」取代「收/發文機關」欄位（regex 與 Vision 路徑同步）
 # [2026-06-01] [v2.0] 擷取「發文方式」欄位：發文時以文件內標示覆蓋 recv_type（電子交換→電子公文，郵寄→郵寄）
 # [2026-06-12] [v2.1] 文號去除內部空白（三處：regex/extract_fields/Vision 路徑）；condense_subject 工程/計畫名稱前置
+# [2026-06-12] [v2.2] Gemini 呼叫前加 time.sleep(20) 限速，避免觸及 free tier RPM 上限
