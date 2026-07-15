@@ -7,6 +7,11 @@ from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, GOOGLE_API_KEY, GEMINI_MODEL
 # 民國年轉西元年（用於 Sheets 日期欄位）
 _ROC_YEAR_OFFSET = 1911
 
+# 主旨精簡 few-shot 範例參數
+_ILLEGAL_CHARS = re.compile(r'[\\/:*?"<>|]')
+_EXAMPLE_LIMIT = 4        # 注入 prompt 的範例筆數上限
+_EXAMPLE_MAX_LEN = 60     # 超過此長度的主旨視為異常，不採為範例（防污染）
+
 
 def extract_fields(text: str, recv_type: str) -> dict:
     """從公文文字解析各欄位，回傳欄位字典。"""
@@ -203,18 +208,101 @@ def _local_condense(raw_subject: str) -> str:
     return s[:MAX_SUBJECT_LEN]
 
 
-def condense_subject(raw_subject: str) -> str:
-    """用 Gemini 將公文主旨精簡為 40 字以內重點；重試 3 次仍失敗則本地截斷退回。"""
+def _extract_project_key(subject: str) -> str:
+    """從主旨引號內抽取工程/計畫名（含『工程』『計畫』『計劃』者），作為相關性關鍵字。"""
+    for m in re.findall(r"[「『]([^」』]{2,40})[」』]", subject or ""):
+        if any(k in m for k in ("工程", "計畫", "計劃")):
+            return m
+    return ""
+
+
+def _filename_subject(filename: str) -> str:
+    """從歸檔檔名 NNN.日期_機關_主旨.pdf 取回主旨段（自動精簡當時的值）。"""
+    base = re.sub(r"\.pdf$", "", filename or "")
+    parts = base.split("_", 2)
+    return parts[2] if len(parts) >= 3 else ""
+
+
+def _norm_for_filename(s: str) -> str:
+    """套用與歸檔檔名相同的截斷＋去非法字元，供比對是否被人工修正。"""
+    return _ILLEGAL_CHARS.sub("", (s or "")[:MAX_SUBJECT_LEN]).strip()
+
+
+def _is_human_corrected(ex: dict) -> bool:
+    """比對 J 欄檔名主旨（auto）與正規化後 G 欄主旨，判斷該列是否經人工修正。"""
+    auto = _filename_subject(ex.get("filename", ""))
+    if not auto:
+        return False
+    return auto != _norm_for_filename(ex.get("subject", ""))
+
+
+def _relevance(new_org: str, project_key: str, ex: dict) -> int:
+    """依機關相符、工程/計畫名關鍵字、是否人工修正，計算範例相關性分數。"""
+    score = 0
+    org = ex.get("org", "")
+    if new_org and org and (new_org == org or new_org in org or org in new_org):
+        score += 2
+    if project_key:
+        subj = ex.get("subject", "")
+        for i in range(len(project_key) - 2):
+            if project_key[i:i + 3] in subj:
+                score += 3
+                break
+    # 人工修正僅作為「已相關列」的排序加權，不得單獨讓不相關列入選
+    if score > 0 and _is_human_corrected(ex):
+        score += 1
+    return score
+
+
+def _build_subject_examples(new_org: str, raw_subject: str) -> str:
+    """讀 Sheet 依相關性挑選過往主旨，組成 few-shot 範例區字串；無可用範例時回傳空字串。"""
+    try:
+        from sheets_manager import fetch_subject_examples
+        rows = fetch_subject_examples()
+    except Exception:
+        return ""
+    project_key = _extract_project_key(raw_subject)
+    scored = []
+    for ex in rows:
+        subj = ex.get("subject", "").strip()
+        if not subj or len(subj) > _EXAMPLE_MAX_LEN:  # 排除異常長度（防污染）
+            continue
+        s = _relevance(new_org, project_key, ex)
+        if s > 0:
+            scored.append((s, subj))
+    if not scored:
+        return ""
+    scored.sort(key=lambda x: x[0], reverse=True)
+    seen, picked = set(), []
+    for _, subj in scored:
+        if subj in seen:
+            continue
+        seen.add(subj)
+        picked.append(subj)
+        if len(picked) >= _EXAMPLE_LIMIT:
+            break
+    lines = "\n".join(f"- {p}" for p in picked)
+    return (
+        "以下是本單位過往主旨精簡範例，請比照其長度、詳略與用語風格（僅供風格參考，勿抄內容）：\n"
+        f"{lines}\n\n"
+    )
+
+
+def condense_subject(raw_subject: str, org: str = "") -> str:
+    """用 Gemini 將公文主旨精簡為 40 字以內重點；重試 3 次仍失敗則本地截斷退回。
+    org 若提供，會參考 Sheet 中同機關/同計畫過往已修正主旨作為 few-shot 風格範例。"""
     if not raw_subject:
         return raw_subject
     if not GOOGLE_API_KEY:
         return _local_condense(raw_subject)
+    examples = _build_subject_examples(org, raw_subject)
     prompt = (
         "以下是一份台灣政府公文的主旨原文，請精簡為 40 字以內的重點摘要。"
         "規則：①若原文提及工程名稱或計畫名稱，將其置於摘要開頭，再接重點（格式：「XXX工程 摘要重點」）；"
         "②最優先：若有期限計算語句（如「次日起N日曆天完成」「N工作天內提交」），必須完整保留；"
-        "③保留核心事項；④不加任何說明或額外字元：\n"
-        f"{raw_subject}"
+        "③保留核心事項；④不加任何說明或額外字元：\n\n"
+        f"{examples}"
+        f"待精簡主旨：{raw_subject}"
     )
     from google import genai
     for attempt in range(3):
@@ -247,3 +335,4 @@ def condense_subject(raw_subject: str) -> str:
 # [2026-06-12] [v2.2] Gemini 呼叫前加 time.sleep(20) 限速，避免觸及 free tier RPM 上限
 # [2026-06-16] [v2.3] Vision prompt 強化收發日期擷取：限定取信頭發文日期、禁用內文其他日期、逐字確認數字
 # [2026-07-15] [v2.4] 修正主旨過度擷取：終止條件改為「段落標題＋冒號」不依賴換行；新增 _strip_leader_dots 清除點狀分隔線；condense_subject 改為重試 3 次＋失敗時本地截斷退回（不再回傳爆量原文）
+# [2026-07-15] [v2.5] condense_subject 加入 few-shot：依機關＋工程/計畫名關鍵字自 Sheet 挑過往已修正主旨為風格範例（in-context，不改模型）；防污染長度過濾＋人工修正加權

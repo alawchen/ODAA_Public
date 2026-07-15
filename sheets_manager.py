@@ -11,6 +11,7 @@ _SCOPES = [
 
 _spreadsheet_cache = None
 _sheet_cache: dict = {}  # {roc_year: worksheet}
+_examples_cache = None   # list[dict]，主旨精簡範例（跨年份分頁彙整，單次執行快取）
 
 
 def _get_spreadsheet():
@@ -55,6 +56,33 @@ def get_next_serial(roc_year: str) -> int:
     return max(nums, default=0) + 1
 
 
+def fetch_subject_examples() -> list:
+    """彙整所有年份分頁的主旨範例列（機關/案號/主旨/歸檔檔名），供 AI 精簡參考；單次執行快取。"""
+    global _examples_cache
+    if _examples_cache is not None:
+        return _examples_cache
+    rows = []
+    try:
+        spreadsheet = _get_spreadsheet()
+        for ws in spreadsheet.worksheets():
+            values = ws.get_all_values()
+            for r in values[1:]:  # 跳過標題列
+                r = r + [""] * (len(SHEET_COLUMNS) - len(r))
+                subject = r[6].strip()  # G 欄 主旨
+                if not subject:
+                    continue
+                rows.append({
+                    "org": r[2].strip(),       # C 欄 收/發文機關
+                    "anhao": r[5].strip(),     # F 欄 案號
+                    "subject": subject,        # G 欄 主旨
+                    "filename": r[9].strip(),  # J 欄 歸檔檔名
+                })
+    except Exception:
+        rows = []
+    _examples_cache = rows
+    return rows
+
+
 def append_record(fields: dict, serial: int, archive_filename: str):
     """在對應年份分頁末尾新增一列公文紀錄。"""
     roc_year = _year_from_fields(fields)
@@ -80,3 +108,4 @@ def append_record(fields: dict, serial: int, archive_filename: str):
 # [2026-05-13] [v1.3] 改為多分頁架構：依民國年取得/建立分頁，移除 ensure_header_columns
 # [2026-05-13] [v1.4] 改用 worksheets() 清單比對取代 try/except WorksheetNotFound，修正 gspread 6.x 相容性問題
 # [2026-06-08] [v1.5] append_record 文號欄位去除所有空白字元（含 OCR/AI 引入的內部空白）
+# [2026-07-15] [v1.6] 新增 fetch_subject_examples()：彙整各年份分頁主旨供 AI 精簡 few-shot 參考（單次執行快取）

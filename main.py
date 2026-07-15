@@ -87,7 +87,7 @@ def process_pdf(pdf_path: str, processed: set) -> bool:
                 log.info(f"使用 Gemini Vision 辨識掃描件：{filename}")
                 fields = extract_fields_from_images(images, recv_type)
                 if fields.get("主旨"):
-                    fields["主旨"] = condense_subject(fields["主旨"])
+                    fields["主旨"] = condense_subject(fields["主旨"], fields.get("收/發文機關", ""))
                     log.info(f"主旨已精簡（Gemini）：{fields['主旨']}")
             else:
                 log.warning(f"圖片轉換失敗，退回 Tesseract：{filename}")
@@ -97,7 +97,7 @@ def process_pdf(pdf_path: str, processed: set) -> bool:
                 log.warning(f"OCR 失敗，需人工複核：{filename}")
             fields = extract_fields(text, recv_type)
             if fields.get("主旨") and GOOGLE_API_KEY:
-                fields["主旨"] = condense_subject(fields["主旨"])
+                fields["主旨"] = condense_subject(fields["主旨"], fields.get("收/發文機關", ""))
                 log.info(f"主旨已精簡（Gemini）：{fields['主旨']}")
         _log_parse_result(filename, fields)
 
@@ -151,3 +151,4 @@ if __name__ == "__main__":
 # [2026-05-15] [v1.7] 掃描件 Vision 路徑亦加入 condense_subject() 呼叫
 # [2026-06-01] [v1.8] processed.json 改以 SHA256 hash 識別，解決 Flash.pdf 重名略過問題
 # [2026-06-01] [v1.9] load_processed 自動遷移舊格式（檔名→hash）；移除 filename fallback
+# [2026-07-15] [v2.0] condense_subject 傳入收/發文機關，啟用 Sheet 過往主旨 few-shot 參考
