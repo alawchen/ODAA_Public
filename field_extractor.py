@@ -2,7 +2,7 @@ import re
 import json
 import time
 from datetime import date
-from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, GOOGLE_API_KEY, GEMINI_MODEL, OWN_ORG
+from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, GOOGLE_API_KEY, GEMINI_MODEL, OWN_ORG, MAX_SUBJECT_LEN
 
 # 民國年轉西元年（用於 Sheets 日期欄位）
 _ROC_YEAR_OFFSET = 1911
@@ -31,6 +31,11 @@ def extract_fields(text: str, recv_type: str) -> dict:
 def _is_sufficient(fields: dict) -> bool:
     required = ["收/發文機關", "收發日期", "文號", "主旨"]
     return all(fields.get(k) for k in required)
+
+
+def _strip_leader_dots(text: str) -> str:
+    """移除公文點狀分隔線殘留（2 個以上連續 ASCII 點/間隔點的 leader），保留中文句號。"""
+    return re.sub(r"[.·・･•‧]{2,}", "", text)
 
 
 def _parse_by_regex(text: str) -> dict:
@@ -66,13 +71,15 @@ def _parse_by_regex(text: str) -> dict:
         fields["收發日期"] = _roc_to_date_str(roc_y, m, d)
         fields["_roc_date"] = f"{roc_y}.{m:02d}.{d:02d}"
 
-    # 主旨（多行擷取至下一個段落標題；合併 OCR 換行）
+    # 主旨（多行擷取至下一個段落標題；合併 OCR 換行、清除點狀 leader）
+    # 終止條件以「段落標題＋冒號」為界，不依賴換行，避免公文點狀分隔線導致過度擷取
     subject_match = re.search(
-        r"主\s*旨\s*[：:‥﹕]\s*([\s\S]+?)(?=\n\s*(?:說明|辦法|正本|副本)|\Z)",
+        r"主\s*旨\s*[：:‥﹕]\s*([\s\S]+?)(?=(?:說明|辦法|正本|副本)\s*[：:]|\Z)",
         text
     )
     if subject_match:
-        subject_raw = re.sub(r"[ \t]*\n[ \t]*", "", subject_match.group(1)).strip()
+        subject_raw = re.sub(r"[ \t]*\n[ \t]*", "", subject_match.group(1))
+        subject_raw = _strip_leader_dots(subject_raw).strip()
         if len(subject_raw) >= 5:
             fields["主旨"] = subject_raw
 
@@ -149,6 +156,9 @@ def extract_fields_from_images(images: list, recv_type: str) -> dict:
     prompt = (
         "這是一份台灣政府公文圖片，請擷取以下欄位並以 JSON 回傳：\n"
         '{"收/發文機關":"（信頭發文單位）", "受文者":"", "收發日期":"YYYY/MM/DD（西元年）", "文號":"", "主旨":"", "發文方式":""}\n'
+        "收發日期請務必取公文信頭的「發文日期」欄位（民國年換算西元），"
+        "不可使用主旨、說明或內文中提及的其他日期（如會議、督導、紀錄、工程日期）；"
+        "請逐字確認信頭日期數字，避免判讀錯誤。\n"
         "主旨請擷取原文（完整文字，不要精簡）。發文方式如有標示請擷取（如「郵寄」「電子交換」）。\n"
         "找不到的欄位填空字串，只回傳 JSON，不要加說明。"
     )
@@ -184,28 +194,41 @@ def extract_fields_from_images(images: list, recv_type: str) -> dict:
     return fields
 
 
+def _local_condense(raw_subject: str) -> str:
+    """Gemini 不可用時的本地退回：截到第一個句號或 MAX_SUBJECT_LEN。"""
+    s = _strip_leader_dots(raw_subject).strip()
+    head = s.split("。")[0]
+    if head and len(head) <= MAX_SUBJECT_LEN:
+        return head
+    return s[:MAX_SUBJECT_LEN]
+
+
 def condense_subject(raw_subject: str) -> str:
-    """用 Gemini 將公文主旨精簡為 30 字以內的重點摘要；若含日期/期限須保留。"""
-    if not GOOGLE_API_KEY or not raw_subject:
+    """用 Gemini 將公文主旨精簡為 40 字以內重點；重試 3 次仍失敗則本地截斷退回。"""
+    if not raw_subject:
         return raw_subject
-    try:
-        from google import genai
-        client = genai.Client(api_key=GOOGLE_API_KEY)
-        prompt = (
-            "以下是一份台灣政府公文的主旨原文，請精簡為 40 字以內的重點摘要。"
-            "規則：①若原文提及工程名稱或計畫名稱，將其置於摘要開頭，再接重點（格式：「XXX工程 摘要重點」）；"
-            "②最優先：若有期限計算語句（如「次日起N日曆天完成」「N工作天內提交」），必須完整保留；"
-            "③保留核心事項；④不加任何說明或額外字元：\n"
-            f"{raw_subject}"
-        )
-        time.sleep(20)
-        resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
-        result = resp.text.strip()
-        # 去除 Gemini 附加的字數標注（如「(30字)」「（40字）」）
-        result = re.sub(r"\s*[（(]\d+字[)）]\s*$", "", result).strip()
-        return result
-    except Exception:
-        return raw_subject
+    if not GOOGLE_API_KEY:
+        return _local_condense(raw_subject)
+    prompt = (
+        "以下是一份台灣政府公文的主旨原文，請精簡為 40 字以內的重點摘要。"
+        "規則：①若原文提及工程名稱或計畫名稱，將其置於摘要開頭，再接重點（格式：「XXX工程 摘要重點」）；"
+        "②最優先：若有期限計算語句（如「次日起N日曆天完成」「N工作天內提交」），必須完整保留；"
+        "③保留核心事項；④不加任何說明或額外字元：\n"
+        f"{raw_subject}"
+    )
+    from google import genai
+    for attempt in range(3):
+        try:
+            client = genai.Client(api_key=GOOGLE_API_KEY)
+            time.sleep(20)
+            resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+            # 去除 Gemini 附加的字數標注（如「(30字)」「（40字）」）
+            result = re.sub(r"\s*[（(]\d+字[)）]\s*$", "", resp.text.strip()).strip()
+            if result:
+                return result
+        except Exception:
+            time.sleep(5 * (attempt + 1))
+    return _local_condense(raw_subject)
 
 
 # === 更新日誌 ===
@@ -222,3 +245,5 @@ def condense_subject(raw_subject: str) -> str:
 # [2026-06-01] [v2.0] 擷取「發文方式」欄位：發文時以文件內標示覆蓋 recv_type（電子交換→電子公文，郵寄→郵寄）
 # [2026-06-12] [v2.1] 文號去除內部空白（三處：regex/extract_fields/Vision 路徑）；condense_subject 工程/計畫名稱前置
 # [2026-06-12] [v2.2] Gemini 呼叫前加 time.sleep(20) 限速，避免觸及 free tier RPM 上限
+# [2026-06-16] [v2.3] Vision prompt 強化收發日期擷取：限定取信頭發文日期、禁用內文其他日期、逐字確認數字
+# [2026-07-15] [v2.4] 修正主旨過度擷取：終止條件改為「段落標題＋冒號」不依賴換行；新增 _strip_leader_dots 清除點狀分隔線；condense_subject 改為重試 3 次＋失敗時本地截斷退回（不再回傳爆量原文）
