@@ -270,6 +270,17 @@ def _warn_missing_alias(subject: str, aliases: dict):
             log.warning(f"案名未收錄於簡稱對照表，主旨將以全稱精簡：{name}")
 
 
+def _front_alias(text: str, aliases: dict) -> str:
+    """將主旨中的案名簡稱移至開頭（去引號，後接一空格）；無簡稱命中時原樣回傳。"""
+    for short in sorted(filter(None, set(aliases.values())), key=len, reverse=True):
+        m = re.search(f"[「『“\"]?{re.escape(short)}[」』”\"]?", text)
+        if m:
+            rest = (text[:m.start()] + text[m.end():]).strip(" 　、，,：:")
+            rest = re.sub(r"\s{2,}", " ", rest)
+            return f"{short} {rest}" if rest else short
+    return text
+
+
 def _relevance(new_org: str, project_key: str, ex: dict, subj: str) -> int:
     """依機關相符、工程/計畫名關鍵字、是否人工修正，計算範例相關性分數。"""
     score = 0
@@ -297,7 +308,7 @@ def _build_subject_examples(new_org: str, raw_subject: str, aliases: dict) -> st
     project_key = _extract_project_key(raw_subject)
     scored = []
     for ex in rows:
-        subj = _apply_aliases(ex.get("subject", "").strip(), aliases)
+        subj = _front_alias(_apply_aliases(ex.get("subject", "").strip(), aliases), aliases)
         if not subj or len(subj) > _EXAMPLE_MAX_LEN:  # 排除異常長度（防污染）
             continue
         s = _relevance(new_org, project_key, ex, subj)
@@ -330,11 +341,12 @@ def condense_subject(raw_subject: str, org: str = "") -> str:
     raw_subject = _apply_aliases(raw_subject, aliases)
     _warn_missing_alias(raw_subject, aliases)
     if not GOOGLE_API_KEY:
-        return _local_condense(raw_subject)
+        return _local_condense(_front_alias(raw_subject, aliases))
     examples = _build_subject_examples(org, raw_subject, aliases)
     prompt = (
         "以下是一份台灣政府公文的主旨原文，請精簡為 40 字以內的重點摘要。"
-        "規則：①若原文提及工程名稱或計畫名稱，將其置於摘要開頭，再接重點（格式：「XXX工程 摘要重點」）；"
+        "規則：①若原文提及工程名稱或計畫名稱，一律置於摘要最開頭、不加引號，後接一個空格再接重點"
+        "（例：「香林服務區 檢送115年9月上半日誌」，不可寫成「檢送『香林服務區』115年9月上半日誌」）；"
         "案名若已是簡稱，原樣保留、不得展開為全稱；"
         "②最優先：若有期限計算語句（如「次日起N日曆天完成」「N工作天內提交」），必須完整保留；"
         "③保留核心事項；④不加任何說明或額外字元：\n\n"
@@ -350,10 +362,10 @@ def condense_subject(raw_subject: str, org: str = "") -> str:
             # 去除 Gemini 附加的字數標注（如「(30字)」「（40字）」）
             result = re.sub(r"\s*[（(]\d+字[)）]\s*$", "", resp.text.strip()).strip()
             if result:
-                return result
+                return _front_alias(result, aliases)
         except Exception:
             time.sleep(5 * (attempt + 1))
-    return _local_condense(raw_subject)
+    return _local_condense(_front_alias(raw_subject, aliases))
 
 
 # === 更新日誌 ===
@@ -374,3 +386,4 @@ def condense_subject(raw_subject: str, org: str = "") -> str:
 # [2026-07-15] [v2.4] 修正主旨過度擷取：終止條件改為「段落標題＋冒號」不依賴換行；新增 _strip_leader_dots 清除點狀分隔線；condense_subject 改為重試 3 次＋失敗時本地截斷退回（不再回傳爆量原文）
 # [2026-07-15] [v2.5] condense_subject 加入 few-shot：依機關＋工程/計畫名關鍵字自 Sheet 挑過往已修正主旨為風格範例（in-context，不改模型）；防污染長度過濾＋人工修正加權
 # [2026-09-07] [v2.6] 主旨精簡導入案名簡稱對照表：送 AI 前將案名全稱替換為簡稱，注入範例同步替換；案名未收錄時 log 提示待補
+# [2026-09-17] [v2.7] 案名簡稱強制置於主旨開頭（去引號＋空格）：AI 結果、本地截斷、few-shot 範例三處統一套用；提示詞附正反例
