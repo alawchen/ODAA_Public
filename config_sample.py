@@ -11,7 +11,7 @@ load_dotenv(Path(__file__).parent / ".env")
 BASE_DIR = str(Path(__file__).parent)  # 自動偵測，不需手動設定
 INBOX_DIR = os.environ.get("INBOX_DIR", "")
 ARCHIVE_BASE_DIR = os.environ.get("ARCHIVE_BASE_DIR", "")
-ARCHIVE_SUBDIR = os.environ.get("ARCHIVE_SUBDIR", "歸檔公文")  # 可在 .env 覆寫
+ARCHIVE_SUBDIR = os.environ.get("ARCHIVE_SUBDIR", "00.歸檔公文")  # 可在 .env 覆寫
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
 PROCESSED_JSON = os.path.join(BASE_DIR, "processed.json")
 CREDENTIALS_JSON = os.path.join(BASE_DIR, "credentials.json")
@@ -64,3 +64,4 @@ MAX_ORG_LEN = 10         # 歸檔檔名機關名最大字元數
 # [2026-05-14] [v1.5] ARCHIVE_SUBDIR 改由 .env 設定（預設 "歸檔公文"）
 # [2026-05-15] [v1.6] MAX_SUBJECT_LEN: 25 → 40（期限語句完整保留需要更多空間）
 # [2026-05-15] [v1.7] 新增 OWN_ORG 設定（本機關名稱，用於判斷收發文類型）
+# [2026-09-17] [v1.8] ARCHIVE_SUBDIR 預設值改為 "00.歸檔公文"，與 config.py 實際值一致

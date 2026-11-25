@@ -23,3 +23,8 @@ BACKUP/
 ODAA-spec.md
 ODAA-plan.md
 case_lookup.json
+
+# 開發文件只留本機，不進公開 repo（2026-11-25 Law）
+CLAUDE.md
+docs/
+_HANDOFF/

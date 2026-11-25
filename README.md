@@ -35,7 +35,7 @@
         ↓ 共同後續
         取得流水號（Google Sheets 對應年份分頁最大值 +1）
         → 依命名規則建立檔名
-        → 複製 PDF 至歸檔資料夾（ARCHIVE_BASE_DIR/{民國年}年/）
+        → 複製 PDF 至歸檔資料夾（ARCHIVE_BASE_DIR/ARCHIVE_SUBDIR/{民國年}年/{收文|發文}/）
         → 新增一列至 Google Sheets
         → 記錄至 processed.json
 ```

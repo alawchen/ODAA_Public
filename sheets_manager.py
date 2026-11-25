@@ -12,6 +12,10 @@ _SCOPES = [
 _spreadsheet_cache = None
 _sheet_cache: dict = {}  # {roc_year: worksheet}
 _examples_cache = None   # list[dict]，主旨精簡範例（跨年份分頁彙整，單次執行快取）
+_aliases_cache = None    # dict，案名簡稱對照（單次執行快取）
+
+ALIAS_SHEET_TITLE = "案名簡稱"
+ALIAS_COLUMNS = ["案名全稱", "簡稱"]
 
 
 def _get_spreadsheet():
@@ -83,6 +87,43 @@ def fetch_subject_examples() -> list:
     return rows
 
 
+def fetch_name_aliases() -> dict:
+    """讀取「案名簡稱」分頁，回傳 {案名全稱: 簡稱}；分頁不存在時自動建立並預填既有案名。單次執行快取。"""
+    global _aliases_cache
+    if _aliases_cache is not None:
+        return _aliases_cache
+    aliases = {}
+    try:
+        spreadsheet = _get_spreadsheet()
+        existing = {ws.title: ws for ws in spreadsheet.worksheets()}
+        if ALIAS_SHEET_TITLE in existing:
+            for r in existing[ALIAS_SHEET_TITLE].get_all_values()[1:]:
+                full = r[0].strip() if len(r) > 0 else ""
+                short = r[1].strip() if len(r) > 1 else ""
+                if full and short:
+                    aliases[full] = short
+        else:
+            _create_alias_sheet(spreadsheet)
+    except Exception:
+        aliases = {}
+    _aliases_cache = aliases
+    return aliases
+
+
+def _create_alias_sheet(spreadsheet):
+    """建立「案名簡稱」分頁，並自既有主旨預填案名全稱，簡稱欄留白供人工填寫。"""
+    from field_extractor import extract_project_names
+    ws = spreadsheet.add_worksheet(title=ALIAS_SHEET_TITLE, rows=200, cols=2)
+    ws.update("A1", [ALIAS_COLUMNS])
+    names = []
+    for ex in fetch_subject_examples():
+        for n in extract_project_names(ex.get("subject", "")):
+            if n not in names:
+                names.append(n)
+    if names:
+        ws.update("A2", [[n] for n in names])
+
+
 def append_record(fields: dict, serial: int, archive_filename: str):
     """在對應年份分頁末尾新增一列公文紀錄。"""
     roc_year = _year_from_fields(fields)
@@ -109,3 +150,4 @@ def append_record(fields: dict, serial: int, archive_filename: str):
 # [2026-05-13] [v1.4] 改用 worksheets() 清單比對取代 try/except WorksheetNotFound，修正 gspread 6.x 相容性問題
 # [2026-06-08] [v1.5] append_record 文號欄位去除所有空白字元（含 OCR/AI 引入的內部空白）
 # [2026-07-15] [v1.6] 新增 fetch_subject_examples()：彙整各年份分頁主旨供 AI 精簡 few-shot 參考（單次執行快取）
+# [2026-09-07] [v1.7] 新增 fetch_name_aliases()：案名簡稱對照分頁讀取，不存在時自動建立並預填既有案名

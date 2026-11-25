@@ -1,8 +1,11 @@
 import re
 import json
 import time
+import logging
 from datetime import date
 from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, GOOGLE_API_KEY, GEMINI_MODEL, OWN_ORG, MAX_SUBJECT_LEN
+
+log = logging.getLogger(__name__)
 
 # 民國年轉西元年（用於 Sheets 日期欄位）
 _ROC_YEAR_OFFSET = 1911
@@ -208,12 +211,18 @@ def _local_condense(raw_subject: str) -> str:
     return s[:MAX_SUBJECT_LEN]
 
 
+def extract_project_names(subject: str) -> list:
+    """從主旨引號內抽出所有工程/計畫名（含『工程』『計畫』『計劃』者）。"""
+    return [
+        m for m in re.findall(r"[「『]([^」』]{2,40})[」』]", subject or "")
+        if any(k in m for k in ("工程", "計畫", "計劃"))
+    ]
+
+
 def _extract_project_key(subject: str) -> str:
-    """從主旨引號內抽取工程/計畫名（含『工程』『計畫』『計劃』者），作為相關性關鍵字。"""
-    for m in re.findall(r"[「『]([^」』]{2,40})[」』]", subject or ""):
-        if any(k in m for k in ("工程", "計畫", "計劃")):
-            return m
-    return ""
+    """取主旨中第一個工程/計畫名，作為範例檢索的相關性關鍵字。"""
+    names = extract_project_names(subject)
+    return names[0] if names else ""
 
 
 def _filename_subject(filename: str) -> str:
@@ -236,14 +245,38 @@ def _is_human_corrected(ex: dict) -> bool:
     return auto != _norm_for_filename(ex.get("subject", ""))
 
 
-def _relevance(new_org: str, project_key: str, ex: dict) -> int:
+def _fetch_aliases() -> dict:
+    """取得案名簡稱對照 {全稱: 簡稱}；讀取失敗時回傳空字典，不影響精簡流程。"""
+    try:
+        from sheets_manager import fetch_name_aliases
+        return fetch_name_aliases()
+    except Exception:
+        return {}
+
+
+def _apply_aliases(text: str, aliases: dict) -> str:
+    """將文字中的案名全稱替換為簡稱；長全稱優先比對，避免短名先命中。"""
+    for full in sorted(aliases, key=len, reverse=True):
+        if full in text:
+            text = text.replace(full, aliases[full])
+    return text
+
+
+def _warn_missing_alias(subject: str, aliases: dict):
+    """主旨中偵測到案名但對照表未收錄時，log 提示待補。"""
+    known = set(aliases) | set(aliases.values())
+    for name in extract_project_names(subject):
+        if name not in known:
+            log.warning(f"案名未收錄於簡稱對照表，主旨將以全稱精簡：{name}")
+
+
+def _relevance(new_org: str, project_key: str, ex: dict, subj: str) -> int:
     """依機關相符、工程/計畫名關鍵字、是否人工修正，計算範例相關性分數。"""
     score = 0
     org = ex.get("org", "")
     if new_org and org and (new_org == org or new_org in org or org in new_org):
         score += 2
     if project_key:
-        subj = ex.get("subject", "")
         for i in range(len(project_key) - 2):
             if project_key[i:i + 3] in subj:
                 score += 3
@@ -254,7 +287,7 @@ def _relevance(new_org: str, project_key: str, ex: dict) -> int:
     return score
 
 
-def _build_subject_examples(new_org: str, raw_subject: str) -> str:
+def _build_subject_examples(new_org: str, raw_subject: str, aliases: dict) -> str:
     """讀 Sheet 依相關性挑選過往主旨，組成 few-shot 範例區字串；無可用範例時回傳空字串。"""
     try:
         from sheets_manager import fetch_subject_examples
@@ -264,10 +297,10 @@ def _build_subject_examples(new_org: str, raw_subject: str) -> str:
     project_key = _extract_project_key(raw_subject)
     scored = []
     for ex in rows:
-        subj = ex.get("subject", "").strip()
+        subj = _apply_aliases(ex.get("subject", "").strip(), aliases)
         if not subj or len(subj) > _EXAMPLE_MAX_LEN:  # 排除異常長度（防污染）
             continue
-        s = _relevance(new_org, project_key, ex)
+        s = _relevance(new_org, project_key, ex, subj)
         if s > 0:
             scored.append((s, subj))
     if not scored:
@@ -293,12 +326,16 @@ def condense_subject(raw_subject: str, org: str = "") -> str:
     org 若提供，會參考 Sheet 中同機關/同計畫過往已修正主旨作為 few-shot 風格範例。"""
     if not raw_subject:
         return raw_subject
+    aliases = _fetch_aliases()
+    raw_subject = _apply_aliases(raw_subject, aliases)
+    _warn_missing_alias(raw_subject, aliases)
     if not GOOGLE_API_KEY:
         return _local_condense(raw_subject)
-    examples = _build_subject_examples(org, raw_subject)
+    examples = _build_subject_examples(org, raw_subject, aliases)
     prompt = (
         "以下是一份台灣政府公文的主旨原文，請精簡為 40 字以內的重點摘要。"
         "規則：①若原文提及工程名稱或計畫名稱，將其置於摘要開頭，再接重點（格式：「XXX工程 摘要重點」）；"
+        "案名若已是簡稱，原樣保留、不得展開為全稱；"
         "②最優先：若有期限計算語句（如「次日起N日曆天完成」「N工作天內提交」），必須完整保留；"
         "③保留核心事項；④不加任何說明或額外字元：\n\n"
         f"{examples}"
@@ -336,3 +373,4 @@ def condense_subject(raw_subject: str, org: str = "") -> str:
 # [2026-06-16] [v2.3] Vision prompt 強化收發日期擷取：限定取信頭發文日期、禁用內文其他日期、逐字確認數字
 # [2026-07-15] [v2.4] 修正主旨過度擷取：終止條件改為「段落標題＋冒號」不依賴換行；新增 _strip_leader_dots 清除點狀分隔線；condense_subject 改為重試 3 次＋失敗時本地截斷退回（不再回傳爆量原文）
 # [2026-07-15] [v2.5] condense_subject 加入 few-shot：依機關＋工程/計畫名關鍵字自 Sheet 挑過往已修正主旨為風格範例（in-context，不改模型）；防污染長度過濾＋人工修正加權
+# [2026-09-07] [v2.6] 主旨精簡導入案名簡稱對照表：送 AI 前將案名全稱替換為簡稱，注入範例同步替換；案名未收錄時 log 提示待補

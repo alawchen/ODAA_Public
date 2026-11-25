@@ -22,7 +22,7 @@ def build_archive_filename(fields: dict, serial: int) -> str:
 
 def _get_archive_dir(fields: dict) -> str:
     """依公文的民國年與收/發文類型決定歸檔資料夾：
-    ARCHIVE_BASE_DIR / {民國年}年 / ARCHIVE_SUBDIR / {收文|發文}。
+    ARCHIVE_BASE_DIR / ARCHIVE_SUBDIR / {民國年}年 / {收文|發文}。
     """
     roc_date = fields.get("_roc_date", "")
     if roc_date:
@@ -30,7 +30,7 @@ def _get_archive_dir(fields: dict) -> str:
     else:
         year = str(date.today().year - _ROC_YEAR_OFFSET)
     doc_type = fields.get("類型", "收文")
-    return os.path.join(ARCHIVE_BASE_DIR, f"{year}年", ARCHIVE_SUBDIR, doc_type)
+    return os.path.join(ARCHIVE_BASE_DIR, ARCHIVE_SUBDIR, f"{year}年", doc_type)
 
 
 def archive_pdf(src_path: str, archive_filename: str, fields: dict) -> str:
@@ -57,3 +57,4 @@ def _sanitize(text: str) -> str:
 # [2026-05-13] [v1.0] 初始版本，歸檔命名規則與複製功能
 # [2026-05-13] [v1.1] archive_pdf 新增 fields 參數，依公文民國年動態決定歸檔路徑
 # [2026-06-01] [v1.2] 歸檔路徑加入收/發文子資料夾（收文\ 或 發文\），方便檔案總管直接辨識
+# [2026-09-17] [v1.3] 歸檔路徑層級對調為 ARCHIVE_SUBDIR\{民國年}年\{收文|發文}，年份改為歸檔公文底下的子資料夾
